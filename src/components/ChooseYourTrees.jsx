@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useSession } from "@/lib/auth-client";
 
 const categories = [
   "All Trees",
@@ -17,10 +18,31 @@ const categories = [
   "Aquatic Plants",
 ];
 
-// trees prop আসবে server component থেকে (MongoDB data)
 export default function ChooseYourTrees({ trees = [] }) {
   const [selectedCategory, setSelectedCategory] = useState("All Trees");
   const [cart, setCart] = useState([]);
+  const { data: session } = useSession();
+  const user = session?.user;
+
+  // user login হলে cart load করো
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`http://localhost:5000/api/cart/${user.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setCart(data.items);
+      });
+  }, [user?.id]);
+
+  // cart change হলে MongoDB তে save করো
+  const saveCart = async (updatedCart) => {
+    if (!user?.id) return;
+    await fetch("http://localhost:5000/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: user.id, items: updatedCart }),
+    });
+  };
 
   const filtered =
     selectedCategory === "All Trees"
@@ -30,19 +52,22 @@ export default function ChooseYourTrees({ trees = [] }) {
   const addToCart = (tree) => {
     setCart((prev) => {
       const exists = prev.find((item) => item._id === tree._id);
-      if (exists) {
-        return prev.map((item) =>
-          item._id === tree._id
-            ? { ...item, qty: item.qty + 1 }
-            : item
-        );
-      }
-      return [...prev, { ...tree, qty: 1 }];
+      const updatedCart = exists
+        ? prev.map((item) =>
+            item._id === tree._id ? { ...item, qty: item.qty + 1 } : item
+          )
+        : [...prev, { ...tree, qty: 1 }];
+      saveCart(updatedCart);
+      return updatedCart;
     });
   };
 
   const removeFromCart = (id) => {
-    setCart((prev) => prev.filter((item) => item._id !== id));
+    setCart((prev) => {
+      const updatedCart = prev.filter((item) => item._id !== id);
+      saveCart(updatedCart);
+      return updatedCart;
+    });
   };
 
   const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -50,7 +75,6 @@ export default function ChooseYourTrees({ trees = [] }) {
   return (
     <section className="bg-[#e8f5ee] dark:bg-[#0f2e1a] min-h-screen py-10 px-4 transition-colors duration-300">
       <div className="max-w-6xl mx-auto rounded-2xl p-6">
-        {/* Title */}
         <h2 className="text-2xl sm:text-3xl font-bold text-center text-gray-800 dark:text-gray-100 mb-6">
           Choose Your Trees
         </h2>
@@ -92,7 +116,6 @@ export default function ChooseYourTrees({ trees = [] }) {
                     key={tree._id}
                     className="bg-white dark:bg-[#1a3d27] rounded-xl overflow-hidden border border-gray-100 dark:border-green-900"
                   >
-                    {/* Image */}
                     <div className="w-full h-44 bg-gray-100 dark:bg-gray-800 relative">
                       {tree.image ? (
                         <Image
@@ -105,8 +128,6 @@ export default function ChooseYourTrees({ trees = [] }) {
                         <div className="w-full h-full bg-gray-200 dark:bg-gray-700" />
                       )}
                     </div>
-
-                    {/* Info */}
                     <div className="p-3">
                       <h3 className="font-semibold text-gray-800 dark:text-gray-100 text-sm mb-1">
                         {tree.name}
@@ -141,8 +162,11 @@ export default function ChooseYourTrees({ trees = [] }) {
               <p className="font-semibold text-gray-800 dark:text-gray-100 text-sm mb-3">
                 Your Cart
               </p>
-
-              {cart.length === 0 ? (
+              {!user ? (
+                <p className="text-xs text-gray-400">
+                  Login to save your cart.
+                </p>
+              ) : cart.length === 0 ? (
                 <p className="text-gray-400 text-xs">Cart is empty.</p>
               ) : (
                 <ul className="space-y-3 mb-4">
@@ -152,7 +176,7 @@ export default function ChooseYourTrees({ trees = [] }) {
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
                           {item.name}
                         </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-400">
+                        <p className="text-xs text-gray-400">
                           ৳{item.price} × {item.qty}
                         </p>
                       </div>
@@ -167,7 +191,6 @@ export default function ChooseYourTrees({ trees = [] }) {
                   ))}
                 </ul>
               )}
-
               <div className="border-t border-gray-100 dark:border-green-800 pt-3 flex justify-between items-center">
                 <span className="text-sm text-gray-600 dark:text-gray-300">Total:</span>
                 <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
